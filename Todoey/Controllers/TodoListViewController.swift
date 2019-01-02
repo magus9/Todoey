@@ -8,11 +8,15 @@
 
 import UIKit
 import RealmSwift
+import ChameleonFramework
 
-class TodoListViewController: UITableViewController {
+class TodoListViewController: SwipeTableViewController {
     
     var todoItems : Results<Item>?
     let realm = try! Realm()
+    
+    @IBOutlet weak var searchBar: UISearchBar!
+    
     
     var selectedCatgory : Category? {
         didSet{
@@ -23,14 +27,44 @@ class TodoListViewController: UITableViewController {
     let defaults = UserDefaults.standard
     
     override func viewDidLoad() {
+        super.viewDidLoad()
         
-        print(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask))
+        //print(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask))
         
         tableView.delegate = self
         
-        //loadItems()
         
         
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        title = selectedCatgory?.name
+
+        guard let colorHex = selectedCatgory?.color else { fatalError()}
+        
+        updateNavBar(withHexCode: colorHex)
+
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        updateNavBar(withHexCode: "1D9BF6")
+
+    }
+    
+    //MARK: - Nav Bar Setup Methods
+    
+    func updateNavBar(withHexCode colorHexCode: String){
+        guard let navBar = navigationController?.navigationBar else {
+            fatalError("Navigation controller does no exist.")
+        }
+        
+        guard let navBarColor = UIColor(hexString: colorHexCode) else { fatalError()}
+        
+        navBar.barTintColor = navBarColor
+        navBar.tintColor = ContrastColorOf(navBarColor, returnFlat: true)
+        navBar.largeTitleTextAttributes = [NSAttributedString.Key.foregroundColor: navBar.tintColor]
+        searchBar.barTintColor = navBarColor
+
     }
     
     //MARK - Tableview Datasource Methods
@@ -45,16 +79,22 @@ class TodoListViewController: UITableViewController {
     }
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        //dequeue cell with identifier "ToDoItemCell"
-        let dequeueCell = tableView.dequeueReusableCell(withIdentifier: "ToDoItemCell")
+        let cell = super.tableView(tableView, cellForRowAt: indexPath)
+        
         if let item = todoItems?[indexPath.row] {
-            dequeueCell?.textLabel?.text = item.title
-            dequeueCell!.accessoryType = item.done ? .checkmark : .none
+            cell.textLabel?.text = item.title
+            
+            if let color = UIColor(hexString: selectedCatgory!.color)?.darken(byPercentage: CGFloat(indexPath.row) / CGFloat(todoItems!.count)){
+                cell.backgroundColor = color
+                cell.textLabel?.textColor = ContrastColorOf(color, returnFlat: true)
+            }
+            
+            cell.accessoryType = item.done ? .checkmark : .none
         } else {
-            dequeueCell?.textLabel?.text = "No Items Added"
+            cell.textLabel?.text = "No Items Added"
         }
         
-        return dequeueCell!
+        return cell
     }
     
     //MARK - TableView Delegate Methods
@@ -118,6 +158,20 @@ class TodoListViewController: UITableViewController {
         
         tableView.reloadData()
     }
+    
+    //MARK: - Delete Data From Swipe
+    
+    override func updateModel(at indexPath: IndexPath) {
+        if let item = self.todoItems?[indexPath.row] {
+            do{
+                try self.realm.write {
+                    self.realm.delete(item)
+                }
+            } catch {
+                print("Error deleting item, \(error)")
+            }
+        }
+    }
 }
 
 // MARK: - Search bar methods
@@ -126,7 +180,7 @@ extension TodoListViewController: UISearchBarDelegate {
         todoItems = todoItems?.filter("title CONTAINS[cd] %@", searchBar.text!).sorted(byKeyPath: "dateCreated", ascending: true)
         tableView.reloadData()
     }
-
+    
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
         if searchBar.text?.count == 0 {
             loadItems()
